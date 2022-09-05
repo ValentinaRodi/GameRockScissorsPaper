@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Камень, ножницы, бумага</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app center">
+        <div class="some-block"></div>
+    </div>
+    <script>
+        const app = document.querySelector('.app');
+        const someBlock = app.querySelector('.some-block');
+        let intervalID;
+        let loginName = '';
+
+        window.application = {
+            blocks: {},
+            screens: {},
+            renderScreen: function(screenName) {},
+            renderBlock: function(blockName, container) {},
+            timers: []
+        };
+
+        function renderLoginScreen() {
+            app.textContent = '';
+
+            const loginTitle = document.createElement('h2');
+            loginTitle.textContent = 'ИГРА';
+            loginTitle.classList.add('login__title');
+
+            const loginText = document.createElement('h1');
+            loginText.textContent = 'Камень, ножницы, бумага';
+            loginText.classList.add('login__text');
+
+            const textNickname = document.createElement('p');
+            textNickname.textContent = 'Ваш никнейм';
+            textNickname.classList.add('login__nick');
+
+            const inputNickname = document.createElement('input');
+            inputNickname.classList.add('login__nick_input');
+            
+            const loginButton = document.createElement('button');
+            loginButton.textContent = 'Войти';
+            loginButton.classList.add('login__nick_btn');
+
+            loginButton.addEventListener('click', () => {
+                loginName = inputNickname.value;
+
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/login?login=${loginName}`,
+                    onSuccess: gameLogin,
+                    onFail: showError,
+                });
+            });
+
+            app.appendChild(loginTitle);
+            app.appendChild(loginText);
+            app.appendChild(textNickname);
+            app.appendChild(inputNickname);
+            app.appendChild(loginButton);
+        };
+
+        renderLoginScreen();
+        window.application.screens['renderLogin'] = renderLoginScreen;   
+        window.application.renderScreen('renderLogin');
+        
+        function gameLogin(login) {
+
+            if(login.status === 'ok') {
+                window.application.token = login.token;
+
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/player-status?token=${window.application.token}`,
+                    onSuccess: gameStatus,
+                    onFail: showError,
+                });
+
+            } else {
+                app.textContent = 'Такой никнейм не существует. Попробуйте еще раз';
+                
+                const errorButton = document.createElement('button');
+                errorButton.textContent = 'Войти';
+                errorButton.classList.add('login__nick_btn');
+
+                errorButton.addEventListener('click', () => {
+                    window.application.renderScreen('login');
+                });
+            };  
+        };
+
+        function gameStatus(status) {
+            console.log(status["player-status"].status);
+            let playerStatus = status["player-status"].status;
+           
+            if(playerStatus === 'lobby') {
+                intervalID = setInterval(getListPlayer, 1000);
+                window.application.timers.push(intervalID);
+                
+                renderLobbyScreen(document.querySelector('.some-block'));
+                window.application.screens['renderLobby'] = renderLobbyScreen;
+                window.application.renderScreen('renderLobby');  
+            };
+
+            if(playerStatus === 'game') { 
+                window.application.id = status['player-status']['game']['id'];
+
+                getOpp();
+            }; 
+            
+            if(playerStatus === 'error') {
+                app.textContent = 'Такой никнейм не существует. Попробуйте еще раз';
+                
+                const errorButton = document.createElement('button');
+                errorButton.textContent = 'Войти';
+                errorButton.classList.add('login__nick_btn');
+
+                errorButton.addEventListener('click', () => {
+                    window.application.renderScreen('login');
+                });
+            };
+        };
+
+        function getListPlayer() {
+            httpRequest({
+                url: `https://skypro-rock-scissors-paper.herokuapp.com/player-list?token=${window.application.token}`,
+                onSuccess: playList,
+                onFail: showError,
+            });
+        };
+
+        function playList(list) {
+            const textListPlay = app.querySelector('.listPlayer');
+            let listPlayer = list.list;
+            
+            while(textListPlay.firstChild) {
+                textListPlay.removeChild(textListPlay.firstChild);
+            }
+
+            for (let i = 0; i < listPlayer.length; i++) {
+                let playersLogin = document.createElement('p');
+
+                playersLogin.textContent = listPlayer[i].login;
+                playersLogin.classList.add('listPlayer');
+                
+                textListPlay.appendChild(playersLogin);
+            };
+        };
+
+        function renderLobbyScreen() {
+            app.textContent = '';
+
+            const lobbyTitle = document.createElement('h2');
+            lobbyTitle.textContent = 'Игроки';
+            lobbyTitle.classList.add('login__title');
+
+            const textList = document.createElement('p');
+            textList.classList.add('listPlayer');
+         
+            const lobbyButton = document.createElement('button');
+            lobbyButton.textContent = 'Играть';
+            lobbyButton.classList.add('login__nick_btn');
+
+            lobbyButton.addEventListener('click', () => {
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/start?token=${window.application.token}`,
+                    onSuccess: waitingOpponent,
+                    onFail: showError,
+                });
+            });
+
+            app.appendChild(lobbyTitle);
+            app.appendChild(textList);
+            app.appendChild(lobbyButton);
+        };
+
+        function waitingOpponent(opponents) {
+            if(opponents["status"] === 'ok') {
+                window.application.id = opponents['player-status']['game']['id'];
+               
+                renderWaitingScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWaiting'] = renderWaitingScreen;
+                window.application.renderScreen('renderWating');
+                
+                intervalID = setInterval(getOpp, 500);
+                window.application.timers.push(intervalID);
+            } else {
+                app.textContent = opponents['message'];
+                
+                const errorButton = document.createElement('button');
+                errorButton.textContent = 'Играть';
+                errorButton.classList.add('login__nick_btn');
+
+                errorButton.addEventListener('click', () => {
+                    window.application.renderScreen('lobby');
+                });
+            };
+        };
+        
+        function renderWaitingScreen() {
+            app.textContent = '';
+            let objTimer = window.application.timers;
+           
+            objTimer.forEach(element => {
+                clearInterval(intervalID);
+            });
+           
+            const waitingTitle = document.createElement('h2');
+            waitingTitle.textContent = 'Игра';
+            waitingTitle.classList.add('login__title');
+
+            const loginText = document.createElement('h1');
+            loginText.textContent = 'Камень, ножницы, бумага';
+            loginText.classList.add('login__text');
+
+            const waitingText = document.createElement('p');
+            waitingText.textContent = 'Вы против ...';
+            waitingText.classList.add('gameText');
+
+            const waitingOppTitle = document.createElement('h2');
+            waitingOppTitle.textContent = 'Ожидаем подключение соперника ...';
+            waitingOppTitle.classList.add('login__title');
+
+            app.appendChild(waitingTitle);
+            app.appendChild(loginText);
+            app.appendChild(waitingText);
+            app.appendChild(waitingOppTitle);
+        };
+
+        function getOpp(opp) {
+            httpRequest({
+                url: `https://skypro-rock-scissors-paper.herokuapp.com/game-status?token=${window.application.token}&id=${window.application.id}`,
+                onSuccess: waitingGame,
+                onFail: showError,
+            });
+        };
+
+        function waitingGame(oppStatus) {
+            const waitingTextOpp = document.querySelector('.gameText')
+            console.log(oppStatus['game-status']['status']);
+            
+            if(oppStatus['game-status']['status'] === 'waiting-for-start') {
+                renderWaitingScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWaiting'] = renderWaitingScreen;
+                window.application.renderScreen('renderWating');
+                
+                intervalID = setInterval(getOpp, 500);
+                window.application.timers.push(intervalID);
+            } else {
+                playGame(oppStatus)
+            }
+            
+            // if(oppStatus['game-status']['status'] === 'waiting-for-enemy-move') {
+            //     renderWaitingMoveScreen(document.querySelector('.some-block'));
+            //     window.application.screens['renderWaitingMove'] = renderWaitingMoveScreen;
+            //     window.application.renderScreen('renderWaitingMove');
+
+            //     const gameTextLogin = app.querySelector('.gameText')
+            //     gameTextLogin.textContent = `Вы против ${playGameMove['game-status']['enemy']['login']}`;
+
+            //     intervalID = setInterval(getMove, 500);
+            //     window.application.timers.push(intervalID);
+            // }; 
+
+            // if(oppStatus['game-status']['status'] === 'waiting-for-your-move') {
+            //     waitingTextOpp.textContent = `Вы против ${oppStatus['game-status']['enemy']['login']}`;
+
+            //     renderGameScreen(document.querySelector('.some-block'));
+            //     window.application.screens['renderGame'] = renderGameScreen;
+            //     window.application.renderScreen('renderGame');
+
+            //     const gameTextLogin = app.querySelector('.gameText')
+            //     gameTextLogin.textContent = `Вы против ${oppStatus['game-status']['enemy']['login']}`;
+            // };
+        };
+
+        function renderGameScreen() {
+            app.textContent = '';
+
+            let objTimer = window.application.timers;
+           
+            objTimer.forEach(element => {
+                clearInterval(intervalID);
+            });
+
+            const gameTitle = document.createElement('h2');
+            gameTitle.textContent = 'Игра';
+            gameTitle.classList.add('login__title');
+
+            const loginText = document.createElement('h1');
+            loginText.textContent = 'Камень, ножницы, бумага';
+            loginText.classList.add('login__text');
+
+            const gameText = document.createElement('p');
+            gameText.classList.add('gameText');
+            
+            const rockButton = document.createElement('button');
+            rockButton.textContent = '👊';
+            rockButton.classList.add('gameButton', 'rockButton');
+
+            rockButton.addEventListener('click', () => {
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/play?token=${window.application.token}&id=${window.application.id}&move=rock`,
+                    onSuccess: playGame,
+                    onFail: showError,
+                });
+            });
+
+            const scissorsButton = document.createElement('button');
+            scissorsButton.textContent = '✌️';
+            scissorsButton.classList.add('gameButton', 'scissorsButton');
+
+            scissorsButton.addEventListener('click', () => {
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/play?token=${window.application.token}&id=${window.application.id}&move=paper`,
+                    onSuccess: playGame,
+                    onFail: showError,
+                });
+            });
+
+            const paperButton = document.createElement('button');
+            paperButton.textContent = '🤚';
+            paperButton.classList.add('gameButton', 'paperButton');
+
+            paperButton.addEventListener('click', () => {
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/play?token=${window.application.token}&id=${window.application.id}&move=scissors`,
+                    onSuccess: playGame,
+                    onFail: showError,
+                });
+            });
+
+            app.appendChild(gameTitle);
+            app.appendChild(loginText);
+            app.appendChild(gameText);
+            app.appendChild(rockButton);
+            app.appendChild(scissorsButton);
+            app.appendChild(paperButton);
+        };
+
+        function playGame(playGameMove) {
+            console.log(playGameMove['game-status']['status']);
+            if(playGameMove['game-status']['status'] === 'waiting-for-your-move') {
+                renderGameScreen(document.querySelector('.some-block'));
+                window.application.screens['renderGame'] = renderGameScreen;
+                window.application.renderScreen('renderGame');
+
+                const gameTextLogin = app.querySelector('.gameText')
+                gameTextLogin.textContent = `Вы против ${playGameMove['game-status']['enemy']['login']}`;
+            };
+
+            if(playGameMove['game-status']['status'] === 'waiting-for-enemy-move') {
+                renderWaitingMoveScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWaitingMove'] = renderWaitingMoveScreen;
+                window.application.renderScreen('renderWaitingMove');
+
+                const gameTextLogin = app.querySelector('.gameText')
+                gameTextLogin.textContent = `Вы против ${playGameMove['game-status']['enemy']['login']}`;
+
+                intervalID = setInterval(getMove, 500);
+                window.application.timers.push(intervalID);
+            };
+
+            if(playGameMove['game-status']['status'] === 'win') {
+                renderWinLoseScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWinLose'] = renderWinLoseScreen;
+                window.application.renderScreen('renderWinLose');
+
+                const gameTextLogin = app.querySelector('.winLoseText')
+                gameTextLogin.textContent = 'Вы выиграли!!!';
+            };
+
+            if(playGameMove['game-status']['status'] === 'lose') {
+                renderWinLoseScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWinLose'] = renderWinLoseScreen;
+                window.application.renderScreen('renderWinLose');
+
+                const gameTextLogin = app.querySelector('.winLoseText')
+                gameTextLogin.textContent = 'Вы проиграли!!!';
+            }; 
+            
+            if (playGameMove['game-status']['status'] === 'error'){
+                app.textContent = opponents['message'];
+                
+                const errorButton = document.createElement('button');
+                errorButton.textContent = 'Играть';
+                errorButton.classList.add('login__nick_btn');
+
+                errorButton.addEventListener('click', () => {
+                    window.application.renderScreen('lobby');
+                });
+            };
+        };
+
+        function getMove() {
+            httpRequest({
+                url: `https://skypro-rock-scissors-paper.herokuapp.com/game-status?token=${window.application.token}&id=${window.application.id}`,
+                onSuccess: getMoveEnemy,
+                onFail: showError,
+            });
+        };
+
+        function getMoveEnemy(moveEnemy) {
+            console.log(moveEnemy['game-status']['status']);
+            if(moveEnemy['game-status']['status'] === 'win') {
+                renderWinLoseScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWinLose'] = renderWinLoseScreen;
+                window.application.renderScreen('renderWinLose');
+
+                const gameTextLogin = app.querySelector('.winLoseText')
+                gameTextLogin.textContent = 'Вы выиграли!!!';
+            };
+
+            if(moveEnemy['game-status']['status'] === 'lose') {
+                renderWinLoseScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWinLose'] = renderWinLoseScreen;
+                window.application.renderScreen('renderWinLose');
+
+                const gameTextLogin = app.querySelector('.winLoseText')
+                gameTextLogin.textContent = 'Вы проиграли!!!';
+            };
+
+            if(moveEnemy['game-status']['status'] === 'waiting-for-your-move') {
+                renderGameScreen(document.querySelector('.some-block'));
+                window.application.screens['renderGame'] = renderGameScreen;
+                window.application.renderScreen('renderGame');
+
+                const gameTextLogin = app.querySelector('.gameText')
+                gameTextLogin.textContent = `Вы против ${moveEnemy['game-status']['enemy']['login']}`;
+            };
+
+            if(moveEnemy['game-status']['status'] === 'waiting-for-enemy-move') {
+                renderWaitingMoveScreen(document.querySelector('.some-block'));
+                window.application.screens['renderWaitingMove'] = renderWaitingMoveScreen;
+                window.application.renderScreen('renderWaitingMove');
+
+                const gameTextLogin = app.querySelector('.gameText')
+                gameTextLogin.textContent = `Вы против ${moveEnemy['game-status']['enemy']['login']}`;
+            };
+        };
+
+        function renderWaitingMoveScreen() {
+            app.textContent = '';
+           
+            const waitingTitle = document.createElement('h2');
+            waitingTitle.textContent = 'Игра';
+            waitingTitle.classList.add('login__title');
+            
+            const loginText = document.createElement('h1');
+            loginText.textContent = 'Камень, ножницы, бумага';
+            loginText.classList.add('login__text');
+
+            const waitingText = document.createElement('p');
+            waitingText.textContent = 'Вы против ...';
+            waitingText.classList.add('gameText');
+
+            const waitingOppTitle = document.createElement('h2');
+            waitingOppTitle.textContent = 'Ожидаем ход соперника ...';
+            waitingOppTitle.classList.add('login__title');
+
+            app.appendChild(waitingTitle);
+            app.appendChild(loginText);
+            app.appendChild(waitingText);
+            app.appendChild(waitingOppTitle);
+        };
+
+        function renderWinLoseScreen() {
+            app.textContent = '';
+
+            let objTimer = window.application.timers;
+           
+            objTimer.forEach(element => {
+                clearInterval(intervalID);
+            });
+           
+            const waitingTitle = document.createElement('h2');
+            waitingTitle.textContent = 'Игра';
+            waitingTitle.classList.add('login__title');
+            
+            const loginText = document.createElement('h1');
+            loginText.textContent = 'Камень, ножницы, бумага';
+            loginText.classList.add('login__text');
+
+            const waitingText = document.createElement('p');
+            waitingText.classList.add('gameText');
+
+            const winTitle = document.createElement('h2');
+            winTitle.classList.add('winLoseText');
+
+            const playButton = document.createElement('button');
+            playButton.textContent = 'Играть еще!';
+            playButton.classList.add('login__nick_btn');
+
+            playButton.addEventListener('click', () => {
+                httpRequest({
+                    url: `https://skypro-rock-scissors-paper.herokuapp.com/start?token=${window.application.token}`,
+                    onSuccess: waitingOpponent,
+                    onFail: showError,
+                });
+            });
+
+            const lobbyButton = document.createElement('button');
+            lobbyButton.textContent = 'В лобби';
+            lobbyButton.classList.add('login__nick_btn');
+
+            lobbyButton.addEventListener('click', () => {
+                renderLobbyScreen(document.querySelector('.some-block'));
+                window.application.screens['renderLobby'] = renderLobbyScreen;
+                window.application.renderScreen('renderLobby');
+            });
+
+            app.appendChild(waitingTitle);
+            app.appendChild(loginText);
+            app.appendChild(waitingText);
+            app.appendChild(winTitle);
+            app.appendChild(playButton);
+            app.appendChild(lobbyButton);
+        };
+
+        function httpRequest({ url, method = 'GET', responseType = 'json', onSuccess, onFail }) {
+            const request = new XMLHttpRequest();
+            
+            request.open(method, url);
+            request.send();
+            request.responseType = 'json';
+
+            request.onload = function() {
+                if (request.status === 200) {
+                    onSuccess(request.response);
+        
+                } else {
+                    onFail(request.response);
+                }
+            };
+
+            request.onerror = function(e) {
+                onFail(e.message);
+            };      
+        };
+
+        function showError(response) {
+            app.textContent = response || 'Ошибка при запросе, попробуйте еще раз';
+        };
+    </script>
+</body>
+</html>
